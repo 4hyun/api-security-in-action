@@ -14,3 +14,6 @@ create TABLE messages(
 create sequence msg_id_seq;
 create INDEX msg_timestamp_idx ON messages(msg_time);
 create UNIQUE INDEX space_name_idx ON spaces(name);
+
+create user natter_api_user password 'password';
+grant select, insert on spaces, messages to natter_api_user;
