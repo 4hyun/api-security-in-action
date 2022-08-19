@@ -2,8 +2,9 @@ package com.manning.apisecurityinaction;
 
 import com.google.common.util.concurrent.*;
 import com.manning.apisecurityinaction.controller.SpaceController;
+import com.manning.apisecurityinaction.controller.UserController;
+
 import org.dalesbred.Database;
-import org.dalesbred.result.EmptyResultException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -18,6 +19,7 @@ import spark.*;
 public class Main {
 
     public static void main(String... args) throws Exception {
+        secure("localhost.p12", "changeit", null, null);
         Spark.staticFiles.location("/public");
         var datasource = JdbcConnectionPool.create("jdbc:h2:mem:natter", "natter", "password");
         var database = Database.forDataSource(datasource);
@@ -26,6 +28,8 @@ public class Main {
         database = Database.forDataSource(datasource);
 
         var spaceController = new SpaceController(database);
+        var userController = new UserController(database);
+
         var rateLimiter = RateLimiter.create(2.0d);
         before((request, response) -> {
             if (!rateLimiter.tryAcquire()) {
@@ -33,11 +37,12 @@ public class Main {
                 halt(429);
             }
         });
-        post("/spaces", spaceController::createSpace);
 
-        exception(IllegalArgumentException.class, Main::badRequest);
-        exception(JSONException.class, Main::badRequest);
-        exception(EmptyResultException.class, (e, request, response) -> response.status(404));
+        post("/spaces", spaceController::createSpace);
+        post("/users", userController::registerUser);
+
+        before(userController::authenticate);
+
         before((request, response) -> {
             if (request.requestMethod().equals("POST") &&
                     !"application/json".equals(request.contentType())) {
@@ -45,11 +50,26 @@ public class Main {
                         "error", "Only application/json supported").toString());
             }
         });
+
         after((request, response) -> response.type("application/json"));
-        afterAfter((request, response) -> response.header("Server", ""));
+
+        afterAfter((request, response) -> {
+            response.type("application/json;charset=utf-8");
+            response.header("X-Content-Type-Options", "nosniff");
+            response.header("X-Frame-Options", "DENY");
+            response.header("X-XSS-Protection", "0");
+            response.header("Cache-Control", "no-store");
+            response.header("Content-Security-Policy",
+                    "default-src 'none'; frame-ancestors 'none'; sandbox");
+            response.header("Server", "");
+        });
 
         internalServerError(new JSONObject().put("error", "internal server error").toString());
         notFound(new JSONObject().put("error", "not found").toString());
+
+        exception(IllegalArgumentException.class, Main::badRequest);
+        exception(JSONException.class, Main::badRequest);
+
     }
 
     private static void badRequest(Exception ex, Request request, Response response) {
