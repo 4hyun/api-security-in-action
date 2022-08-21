@@ -1,6 +1,7 @@
 package com.manning.apisecurityinaction;
 
 import com.google.common.util.concurrent.*;
+import com.manning.apisecurityinaction.controller.AuditController;
 import com.manning.apisecurityinaction.controller.SpaceController;
 import com.manning.apisecurityinaction.controller.UserController;
 
@@ -29,6 +30,7 @@ public class Main {
 
         var spaceController = new SpaceController(database);
         var userController = new UserController(database);
+        var auditController = new AuditController(database);
 
         var rateLimiter = RateLimiter.create(2.0d);
         before((request, response) -> {
@@ -38,11 +40,6 @@ public class Main {
             }
         });
 
-        post("/spaces", spaceController::createSpace);
-        post("/users", userController::registerUser);
-
-        before(userController::authenticate);
-
         before((request, response) -> {
             if (request.requestMethod().equals("POST") &&
                     !"application/json".equals(request.contentType())) {
@@ -50,9 +47,17 @@ public class Main {
                         "error", "Only application/json supported").toString());
             }
         });
+        before(userController::authenticate);
+        before(auditController::auditRequestStart);
+        before("/spaces", userController::requireAuthentication);
+
+        post("/spaces", spaceController::createSpace);
+        post("/users", userController::registerUser);
+        get("/logs", auditController::readAuditLog);
 
         after((request, response) -> response.type("application/json"));
 
+        afterAfter(auditController::auditRequestEnd);
         afterAfter((request, response) -> {
             response.type("application/json;charset=utf-8");
             response.header("X-Content-Type-Options", "nosniff");
