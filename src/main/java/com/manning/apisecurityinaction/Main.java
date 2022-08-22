@@ -2,6 +2,7 @@ package com.manning.apisecurityinaction;
 
 import com.google.common.util.concurrent.*;
 import com.manning.apisecurityinaction.controller.AuditController;
+import com.manning.apisecurityinaction.controller.ModeratorController;
 import com.manning.apisecurityinaction.controller.SpaceController;
 import com.manning.apisecurityinaction.controller.UserController;
 
@@ -50,8 +51,26 @@ public class Main {
         before(userController::authenticate);
         before(auditController::auditRequestStart);
         before("/spaces", userController::requireAuthentication);
-
         post("/spaces", spaceController::createSpace);
+
+        before("/spaces/:spaceId/messages", userController.requirePermission("POST", "w"));
+        post("/spaces/:spaceId/messages", spaceController::postMessage);
+
+        before("/spaces/:spaceId/messages/*", userController.requirePermission("GET", "r"));
+        get("/spaces/:spaceId/messages/:msgId",
+                spaceController::readMessage);
+
+        before("/spaces/:spaceId/messages", userController.requirePermission("GET", "r"));
+        get("/spaces/:spaceId/messages", spaceController::findMessages);
+
+        before("/spaces/:spaceId/members", userController.requirePermission("POST", "rwd"));
+        post("/spaces/:spaceId/members", spaceController::addMember);
+
+        var moderatorController = new ModeratorController(database);
+
+        before("/spaces/:spaceId/messages/*", userController.requirePermission("DELETE", "d"));
+        delete("/spaces/:spaceId/messages/:msgId", moderatorController::deletePost);
+
         post("/users", userController::registerUser);
         get("/logs", auditController::readAuditLog);
 

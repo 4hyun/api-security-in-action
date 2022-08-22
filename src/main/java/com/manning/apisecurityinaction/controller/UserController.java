@@ -75,6 +75,24 @@ public class UserController {
     }
   }
 
+  public Filter requirePermission(String method, String permission) {
+    return (Request request, Response response) -> {
+      if (method.equalsIgnoreCase(request.requestMethod())) {
+        return;
+      }
+      requireAuthentication(request, response);
+
+      var spaceId = Long.parseLong(request.params(":spaceId"));
+      var username = (String) request.attribute("subject");
+
+      var perms = database.findOptional(String.class,
+          "select perms from permissions " + "where space_id = ? and user_id = ?", spaceId, username).orElse("");
+      if (!perms.contains(permission)) {
+        halt(403);
+      }
+    };
+  }
+
   private static void throwInvalidUsernameException() {
     throw new IllegalArgumentException("invalid username");
   }
